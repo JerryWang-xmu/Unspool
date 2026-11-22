@@ -1,0 +1,48 @@
+# Node.js / TypeScript
+node_modules/
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+
+# Rust
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# Test and validation artifacts
+artifacts/sbom/
+artifacts/validation/
+.tmp/
+*.tmp
+*.swp
+playwright-report/
+test-results/
+
+# Local Docker secret material
+deploy/docker/secrets/*
+!deploy/docker/secrets/.gitkeep
+
+# Tauri generated schemas
+apps/desktop/src-tauri/gen/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Third-party local source checkouts
+references/
+
+# Local harness and indexes
+.codegraph/
+.opencode/

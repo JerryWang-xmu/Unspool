@@ -1,0 +1,1652 @@
+openapi: 3.1.0
+info:
+  title: Unspool Runner API
+  version: 1.0.0
+  description: |
+    GUI、Runner 管理和节点控制使用的版本化合同。节点传输细则见 federation-protocol.md。
+    202 只表示已接受；Agent 完成、工具副作用与业务验收分别判断。
+servers:
+  - url: https://runner.example.test/v1
+    description: 本地或 VPC Runner；示例主机名不用于实际部署
+security:
+  - sessionAuth: []
+tags:
+  - name: Discovery
+  - name: Administration
+  - name: Personal
+  - name: Workspaces
+  - name: Collaboration
+  - name: Runs
+  - name: Handoffs
+  - name: Evidence
+  - name: Artifacts
+  - name: Federation
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      tags: [Discovery]
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+  /me:
+    get:
+      operationId: getCurrentPrincipal
+      tags: [Discovery]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /runners:
+    get:
+      operationId: listAuthorizedRunners
+      tags: [Discovery]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /teams:
+    get:
+      operationId: listVisibleTeams
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createTeam
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/TeamCreate" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /teams/{teamId}:
+    patch:
+      operationId: updateTeamPolicy
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/TeamId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/TeamPatch" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-012, FR-053]
+  /teams/{teamId}/members:
+    get:
+      operationId: listTeamMembers
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/TeamId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: inviteTeamMember
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/TeamId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/TeamMemberInvitation" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /teams/{teamId}/members/{membershipId}:
+    patch:
+      operationId: updateTeamMembership
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/TeamId" }, { $ref: "#/components/parameters/MembershipId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/TeamMemberPatch" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /teams/{teamId}/runners:
+    post:
+      operationId: registerRunner
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/TeamId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RunnerRegistration" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /runners/{runnerId}:
+    patch:
+      operationId: updateRunner
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/RunnerId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/RunnerPatch" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /runners/{runnerId}/model-profiles:
+    get:
+      operationId: listModelProfiles
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/RunnerId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: upsertModelProfile
+      tags: [Administration]
+      parameters: [{ $ref: "#/components/parameters/RunnerId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ModelProfileUpsert" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-002, FR-078]
+  /personal-tasks:
+    get:
+      operationId: listPersonalTasks
+      tags: [Personal]
+      parameters: [{ $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createPersonalTask
+      tags: [Personal]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/CreateWorkspace" }
+      responses:
+        "201": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-001, FR-002, FR-003, FR-004]
+  /personal-tasks/{workspaceId}:
+    get:
+      operationId: getPersonalTask
+      tags: [Personal]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+  /personal-tasks/{workspaceId}/share-preview:
+    post:
+      operationId: createSharePreview
+      tags: [Personal]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Selection" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /personal-tasks/{workspaceId}/share:
+    post:
+      operationId: convertPersonalTaskToShared
+      tags: [Personal]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ShareConversion" }
+      responses:
+        "201": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-011]
+  /workspaces:
+    get:
+      operationId: listWorkspaces
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createSharedWorkspace
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/CreateWorkspace" }
+      responses:
+        "201": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}:
+    get:
+      operationId: getWorkspaceOverview
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: updateWorkspace
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/WorkspacePatch" }
+      responses:
+        "200": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/archive:
+    post:
+      operationId: archiveWorkspace
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/Command" }
+      responses:
+        "200": { $ref: "#/components/responses/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/members:
+    post:
+      operationId: inviteWorkspaceMember
+      tags: [Workspaces]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/MemberInvitation" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/context-items:
+    get:
+      operationId: listContextItems
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: createContextItem
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ContextVersion" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/context-items/{contextItemId}/versions:
+    post:
+      operationId: appendContextVersion
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/ContextItemId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/ContextVersion" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/discussions:
+    post:
+      operationId: postDiscussion
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/InputItem" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/suggestions:
+    post:
+      operationId: postSuggestion
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/InputItem" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/suggestions/{suggestionId}/decision:
+    post:
+      operationId: decideSuggestion
+      tags: [Collaboration]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/SuggestionId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/SuggestionDecision" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs:
+    get:
+      operationId: listRuns
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: startRun
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RunCommand" }
+      responses:
+        "202": { $ref: "#/components/responses/RunAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-023, FR-024, FR-076]
+  /workspaces/{workspaceId}/runs/{runId}:
+    get:
+      operationId: getRun
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Run" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/steer:
+    post:
+      operationId: steerRun
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RunCommand" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/follow-ups:
+    post:
+      operationId: queueFollowUp
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RunCommand" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/stop:
+    post:
+      operationId: stopRun
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RunCommand" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/queue-actions:
+    post:
+      operationId: handleQueuedInstruction
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/QueueAction" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/result:
+    post:
+      operationId: assessRunResult
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/CompletionAssessment" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/events:
+    get:
+      operationId: streamWorkspaceEvents
+      tags: [Runs]
+      parameters:
+        - { $ref: "#/components/parameters/WorkspaceId" }
+        - { $ref: "#/components/parameters/After" }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: 已提交 DomainEvent 的 SSE 流；重连和每个事件均重新过滤权限
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/runs/{runId}/output:
+    get:
+      operationId: streamRunOutput
+      tags: [Runs]
+      parameters:
+        - { $ref: "#/components/parameters/WorkspaceId" }
+        - { $ref: "#/components/parameters/RunId" }
+        - name: after
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        "200":
+          description: 非权威输出 delta 的 SSE 流；最终 DomainEvent 替代 delta
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/operator-takeover:
+    post:
+      operationId: takeoverWorkspaceOperator
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/OperatorTakeover" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-036]
+  /workspaces/{workspaceId}/handoffs:
+    post:
+      operationId: inviteHandoff
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/HandoffInvitation" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/prepare:
+    post:
+      operationId: startHandoffPreparation
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Command" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/refresh:
+    post:
+      operationId: refreshHandoffBackground
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Command" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/questions:
+    post:
+      operationId: askPrivatePreparationQuestion
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/PrivateQuestion" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-037, FR-038, FR-040]
+  /workspaces/{workspaceId}/handoffs/{handoffId}/unresolved-issues:
+    post:
+      operationId: recordUnresolvedHandoffIssue
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/UnresolvedIssue" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/publications:
+    post:
+      operationId: publishHandoffClarification
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ClarificationPublication" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/accept:
+    post:
+      operationId: acceptHandoff
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { $ref: "#/components/requestBodies/Command" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/handoffs/{handoffId}/reject:
+    post:
+      operationId: rejectHandoff
+      tags: [Handoffs]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/HandoffId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Command" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /approvals:
+    get:
+      operationId: listVisibleApprovals
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/ApprovalList" }
+        default: { $ref: "#/components/responses/Problem" }
+  /approvals/{approvalId}:
+    get:
+      operationId: getApproval
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/ApprovalId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Approval" }
+        default: { $ref: "#/components/responses/Problem" }
+  /approvals/{approvalId}/decision:
+    post:
+      operationId: decideApproval
+      tags: [Runs]
+      parameters: [{ $ref: "#/components/parameters/ApprovalId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ApprovalDecision" }
+      responses:
+        "200": { $ref: "#/components/responses/Approval" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-030, FR-031, FR-032, FR-033, FR-034]
+  /workspaces/{workspaceId}/conclusions:
+    get:
+      operationId: listConclusions
+      tags: [Evidence]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: proposeConclusion
+      tags: [Evidence]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Conclusion" }
+      responses:
+        "201": { $ref: "#/components/responses/Conclusion" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/conclusions/{conclusionId}/reviews:
+    post:
+      operationId: reviewConclusion
+      tags: [Evidence]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/ConclusionId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ReviewRecord" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/sources/{sourceId}/state:
+    post:
+      operationId: changeEvidenceSourceState
+      tags: [Evidence]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/SourceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/SourceState" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/artifacts:
+    get:
+      operationId: listArtifacts
+      tags: [Artifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: uploadReferenceArtifact
+      tags: [Artifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        description: 默认单文件上限 20MB；实际上限由 Runner 健康能力中的 maxUploadBytes 和管理员策略公布
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [metadata, content]
+              properties:
+                metadata: { $ref: "#/components/schemas/ArtifactMetadata" }
+                content: { type: string, format: binary }
+            encoding:
+              metadata:
+                contentType: application/json
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/artifacts/{artifactId}/content:
+    get:
+      operationId: downloadArtifact
+      tags: [Artifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/ArtifactId" }]
+      responses:
+        "200":
+          description: 当前主体有权读取的指定版本字节；支持 Range 和摘要校验
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/exports:
+    post:
+      operationId: exportWorkspaceArchive
+      tags: [Artifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ExportScope" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        default: { $ref: "#/components/responses/Problem" }
+  /workspaces/{workspaceId}/exports/{exportId}:
+    get:
+      operationId: getWorkspaceArchiveExport
+      tags: [Artifacts]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }, { $ref: "#/components/parameters/ExportId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes:
+    get:
+      operationId: listOwnedNodes
+      tags: [Federation]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/pairing-challenges:
+    post:
+      operationId: createNodePairingChallenge
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/PairingChallenge" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/pair:
+    post:
+      operationId: pairContributorNode
+      tags: [Federation]
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/PairNode" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/{nodeId}/state:
+    post:
+      operationId: changeOwnedNodeState
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/NodeState" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/{nodeId}/resources:
+    post:
+      operationId: registerNodeResource
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ResourceRegistration" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/{nodeId}/snapshots:
+    post:
+      operationId: createNodeSnapshot
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/SnapshotRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-057, FR-061]
+  /nodes/{nodeId}/activity:
+    get:
+      operationId: getOwnedNodeActivity
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+      x-requirements: [FR-070]
+  /nodes/{nodeId}/grants:
+    get:
+      operationId: listOwnedNodeGrants
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /grants:
+    post:
+      operationId: requestGrant
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/GrantProposal" }
+      responses:
+        "201": { $ref: "#/components/responses/Grant" }
+        default: { $ref: "#/components/responses/Problem" }
+  /grants/{grantId}/decision:
+    post:
+      operationId: decideGrant
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/GrantId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/GrantDecision" }
+      responses:
+        "200": { $ref: "#/components/responses/Grant" }
+        default: { $ref: "#/components/responses/Problem" }
+  /grants/{grantId}/revoke:
+    post:
+      operationId: revokeGrant
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/GrantId" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/SignedDirective" }
+      responses:
+        "200": { $ref: "#/components/responses/Grant" }
+        default: { $ref: "#/components/responses/Problem" }
+  /node-operations/poll:
+    post:
+      operationId: pollNodeOperations
+      tags: [Federation]
+      security: [{ mutualTLS: [] }]
+      requestBody: { $ref: "#/components/requestBodies/NodePoll" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /node-operations/{requestId}/receipts:
+    post:
+      operationId: submitNodeOperationReceipt
+      tags: [Federation]
+      security: [{ mutualTLS: [] }]
+      parameters: [{ $ref: "#/components/parameters/RequestId" }]
+      requestBody: { $ref: "#/components/requestBodies/NodeReceiptBatch" }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /nodes/{nodeId}/receipts:
+    get:
+      operationId: exportOwnedNodeReceipts
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/NodeId" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /patches:
+    post:
+      operationId: proposePatch
+      tags: [Federation]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/PatchProposal" }
+      responses:
+        "201": { $ref: "#/components/responses/Object" }
+        default: { $ref: "#/components/responses/Problem" }
+  /patches/{patchId}/apply:
+    post:
+      operationId: applyPatchLocally
+      tags: [Federation]
+      security: [{ mutualTLS: [] }]
+      parameters: [{ $ref: "#/components/parameters/PatchId" }]
+      requestBody: { $ref: "#/components/requestBodies/PatchApplication" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        default: { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    sessionAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-runner-session
+    mutualTLS:
+      type: mutualTLS
+      description: TLS 1.3 节点证书；仍需 OperationTicket 与本地 Grant
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    After:
+      name: after
+      in: query
+      schema: { type: integer, format: int64, minimum: 0 }
+    TeamId: { name: teamId, in: path, required: true, schema: { type: string, format: uuid } }
+    MembershipId: { name: membershipId, in: path, required: true, schema: { type: string, format: uuid } }
+    RunnerId: { name: runnerId, in: path, required: true, schema: { type: string, format: uuid } }
+    ExportId: { name: exportId, in: path, required: true, schema: { type: string, format: uuid } }
+    WorkspaceId: { $ref: "#/components/parameters/PathWorkspaceId" }
+    PathWorkspaceId: { name: workspaceId, in: path, required: true, schema: { type: string, format: uuid } }
+    ContextItemId: { name: contextItemId, in: path, required: true, schema: { type: string, format: uuid } }
+    SuggestionId: { name: suggestionId, in: path, required: true, schema: { type: string, format: uuid } }
+    RunId: { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+    HandoffId: { name: handoffId, in: path, required: true, schema: { type: string, format: uuid } }
+    ApprovalId: { name: approvalId, in: path, required: true, schema: { type: string, format: uuid } }
+    ConclusionId: { name: conclusionId, in: path, required: true, schema: { type: string, format: uuid } }
+    SourceId: { name: sourceId, in: path, required: true, schema: { type: string, format: uuid } }
+    ArtifactId: { name: artifactId, in: path, required: true, schema: { type: string, format: uuid } }
+    NodeId: { name: nodeId, in: path, required: true, schema: { type: string, format: uuid } }
+    GrantId: { name: grantId, in: path, required: true, schema: { type: string, format: uuid } }
+    RequestId: { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+    PatchId: { name: patchId, in: path, required: true, schema: { type: string, format: uuid } }
+  requestBodies:
+    TeamCreate:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [name]
+                properties:
+                  name: { type: string, minLength: 1, maxLength: 100 }
+    TeamPatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                properties:
+                  name: { type: string, minLength: 1, maxLength: 100 }
+                  betaEnabled: { type: boolean, default: false }
+                  defaultPolicy: { type: object, additionalProperties: true }
+    TeamMemberInvitation:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [userId, teamRoles]
+                properties:
+                  userId: { type: string, format: uuid }
+                  teamRoles:
+                    type: array
+                    minItems: 1
+                    items: { type: string, enum: [administrator, member] }
+                  expiresAt: { type: string, format: date-time }
+    TeamMemberPatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                properties:
+                  status: { type: string, enum: [active, disabled] }
+                  teamRoles:
+                    type: array
+                    minItems: 1
+                    items: { type: string, enum: [administrator, member] }
+                  expiresAt: { type: string, format: date-time }
+    RunnerRegistration:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [name, purpose, version, allowedSubjects]
+                properties:
+                  name: { type: string, minLength: 1 }
+                  purpose: { type: string }
+                  version: { type: string }
+                  capabilities: { type: array, items: { type: string } }
+                  allowedSubjects: { type: array, items: { type: string } }
+                  defaultPolicy: { type: object, additionalProperties: true }
+    RunnerPatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                properties:
+                  name: { type: string, minLength: 1 }
+                  purpose: { type: string }
+                  status: { type: string, enum: [available, disabled], description: 仅管理启用/停用；busy/offline/upgrading/error 由健康上报产生 }
+                  allowedSubjects: { type: array, items: { type: string } }
+                  defaultPolicy: { type: object, additionalProperties: true }
+    ModelProfileUpsert:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [provider, model, enabled]
+                properties:
+                  profileId: { type: string, format: uuid }
+                  provider: { type: string }
+                  model: { type: string }
+                  reasoningOptions: { type: object, additionalProperties: true }
+                  credential: { type: string, writeOnly: true }
+                  enabled: { type: boolean }
+    OperatorTakeover:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [kind, operatorEpoch]
+                properties:
+                  kind: { type: string, enum: [offline, forced] }
+                  operatorEpoch: { type: integer, format: int64 }
+                  reason: { type: string, description: forced 时必填且非空 }
+    UnresolvedIssue:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [body, visibility, status]
+                properties:
+                  body: { type: string, minLength: 1 }
+                  visibility: { type: string, enum: [private, shared] }
+                  status: { type: string, enum: [open, resolved] }
+    SnapshotRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [resourceId, entryIds, pathVisibility, recipientRules, notBefore, expiresAt, ownerSignature]
+                properties:
+                  resourceId: { type: string, format: uuid }
+                  entryIds: { type: array, minItems: 1, items: { type: string } }
+                  pathVisibility: { $ref: "#/components/schemas/PathVisibility" }
+                  recipientRules: { $ref: "#/components/schemas/RecipientRules" }
+                  notBefore: { type: string, format: date-time }
+                  expiresAt: { type: string, format: date-time }
+                  ownerSignature: { type: string }
+    Command:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Command" }
+    CreateWorkspace:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [name, runnerId, agentProfileId]
+                properties:
+                  name: { type: string, minLength: 1, maxLength: 50 }
+                  goal: { type: string }
+                  completionCriteria: { type: string }
+                  teamId: { type: string, format: uuid }
+                  runnerId: { type: string, format: uuid }
+                  agentProfileId: { type: string, format: uuid }
+    Selection:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [selectedRecordIds]
+                properties:
+                  selectedRecordIds: { type: array, items: { type: string, format: uuid }, uniqueItems: true }
+    ShareConversion:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [sharePreviewId, teamId, members]
+                properties:
+                  sharePreviewId: { type: string, format: uuid }
+                  teamId: { type: string, format: uuid }
+                  members: { type: array, minItems: 1, items: { $ref: "#/components/schemas/MemberRole" } }
+    WorkspacePatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                properties:
+                  name: { type: string, minLength: 1, maxLength: 50 }
+                  goal: { type: string }
+                  completionCriteria: { type: string }
+    MemberInvitation:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [members]
+                properties:
+                  members: { type: array, minItems: 1, items: { $ref: "#/components/schemas/MemberRole" } }
+    ContextVersion:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [kind, title, body, memberVisibility, agentExposure]
+                properties:
+                  kind: { $ref: "#/components/schemas/ContextKind" }
+                  title: { type: string }
+                  body: { type: string }
+                  sourceRefs: { type: array, items: { type: string } }
+                  memberVisibility: { type: string, enum: [members, private] }
+                  agentExposure: { type: string, enum: [not_provided, pending_operator, provide_next_run] }
+    InputItem:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [body]
+                properties:
+                  body: { type: string, minLength: 1 }
+                  references: { type: array, items: { type: string } }
+    SuggestionDecision:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [decision]
+                properties:
+                  decision: { type: string, enum: [adopted, edited_adopted, ignored] }
+                  editedBody: { type: string }
+    RunCommand:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [operatorEpoch]
+                properties:
+                  operatorEpoch: { type: integer, format: int64, minimum: 1 }
+                  body: { type: string }
+                  contextSnapshotId: { type: string, format: uuid }
+                  confirmedStop: { type: boolean }
+    QueueAction:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [queuedInstructionId, action]
+                properties:
+                  queuedInstructionId: { type: string, format: uuid }
+                  action: { type: string, enum: [retain, modify, delete, release] }
+                  editedBody: { type: string }
+    CompletionAssessment:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [result]
+                properties:
+                  result: { type: string, enum: [complete, partial, incomplete, failed, cancelled] }
+                  reason: { type: string }
+                  evidenceExceptionReason: { type: string }
+    HandoffInvitation:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [recipientId]
+                properties:
+                  recipientId: { type: string, format: uuid }
+                  reason: { type: string }
+    PrivateQuestion:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [question, asOfRevision]
+                properties:
+                  question: { type: string, minLength: 1 }
+                  asOfRevision: { type: integer, format: int64 }
+    ClarificationPublication:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [targetType, editedBody]
+                properties:
+                  targetType: { type: string, enum: [discussion, context, handoff_note] }
+                  editedBody: { type: string, minLength: 1 }
+    ApprovalDecision:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [decision, actionDigest]
+                properties:
+                  decision: { type: string, enum: [approved, rejected] }
+                  actionDigest: { $ref: "#/components/schemas/Digest" }
+                  reason: { type: string }
+    Conclusion:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [kind, body, scope, sourceVersionIds]
+                properties:
+                  kind: { type: string, enum: [fact, assumption, decision] }
+                  body: { type: string, minLength: 1 }
+                  scope: { type: string }
+                  sourceVersionIds: { type: array, items: { type: string, format: uuid }, uniqueItems: true }
+    ReviewRecord:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [newState, reason]
+                properties:
+                  newState: { type: string, enum: [confirmed, review_required, invalid] }
+                  reason: { type: string, minLength: 1 }
+                  sourceVersionIds: { type: array, items: { type: string, format: uuid } }
+    SourceState:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [state]
+                properties:
+                  state: { type: string, enum: [review_required, superseded, revoked, invalid, unavailable] }
+                  reason: { type: string }
+    ExportScope:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [scope]
+                properties:
+                  scope: { type: string, enum: [full_archive, selected_tasks, owned_node_receipts] }
+                  runIds: { type: array, items: { type: string, format: uuid } }
+    PairingChallenge:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [teamId, ownerApprovalPublicKey]
+                properties:
+                  teamId: { type: string, format: uuid }
+                  ownerApprovalPublicKey: { type: string }
+    PairNode:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pairingCode, nodePublicKey, name, platform, agentVersion, capabilities]
+            properties:
+              pairingCode: { type: string }
+              nodePublicKey: { type: string }
+              ownerApprovalPublicKey: { type: string }
+              name: { type: string }
+              platform: { type: string, enum: [ubuntu-24.04-x86_64] }
+              agentVersion: { type: string }
+              capabilities: { type: array, items: { type: string, enum: [snapshot_read, fixed_tool, patch_proposal] } }
+    NodeState:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [state, stateRevision, ownerSignature]
+                properties:
+                  state: { type: string, enum: [paused, revoked, quarantined, online] }
+                  stateRevision: { type: integer, format: int64 }
+                  ownerSignature: { type: string }
+    ResourceRegistration:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [kind, localAlias, displayMetadata]
+                properties:
+                  kind: { type: string, enum: [snapshot, fixed_tool] }
+                  localAlias: { type: string }
+                  displayMetadata: { type: object, additionalProperties: true }
+                  templateDigest: { $ref: "#/components/schemas/Digest" }
+    GrantProposal:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [nodeId, runId, purposeDigest, resourceId, resourceDigest, operations, recipientRules, rights, notBefore, expiresAt]
+                properties:
+                  nodeId: { type: string, format: uuid }
+                  runId: { type: string, format: uuid }
+                  purposeDigest: { $ref: "#/components/schemas/Digest" }
+                  resourceId: { type: string, format: uuid }
+                  resourceDigest: { $ref: "#/components/schemas/Digest" }
+                  operations: { type: array, minItems: 1, items: { type: string, enum: [snapshot_read, fixed_tool_execute, model_disclose, member_disclose, domain_propagate, cache, patch_propose, patch_apply] } }
+                  recipientRules: { $ref: "#/components/schemas/RecipientRules" }
+                  rights: { $ref: "#/components/schemas/DataRights" }
+                  notBefore: { type: string, format: date-time }
+                  expiresAt: { type: string, format: date-time }
+                  usageLimit: { type: integer, minimum: 1 }
+                  budget: { $ref: "#/components/schemas/ResourceBudget" }
+                  cachePolicy: { $ref: "#/components/schemas/CachePolicy" }
+                  handoffPolicy: { type: string, enum: [retain_read_only, reconfirm_high_risk] }
+    GrantDecision:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [decision, grantDigest, ownerSignature]
+                properties:
+                  decision: { type: string, enum: [approved, rejected, reduced] }
+                  grantDigest: { $ref: "#/components/schemas/Digest" }
+                  reducedGrant: { type: object, additionalProperties: true }
+                  ownerSignature: { type: string }
+    SignedDirective:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [stateRevision, reason, signature]
+                properties:
+                  stateRevision: { type: integer, format: int64 }
+                  reason: { type: string }
+                  signature: { type: string }
+    NodePoll:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [nodeId, lastOperationCursor, lastReceiptSequence, capabilities]
+            properties:
+              nodeId: { type: string, format: uuid }
+              lastOperationCursor: { type: integer, format: int64 }
+              lastReceiptSequence: { type: integer, format: int64 }
+              waitSeconds: { type: integer, minimum: 0, maximum: 30, default: 25 }
+              capabilities: { type: array, items: { type: string } }
+    NodeReceiptBatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [receipts]
+            properties:
+              receipts: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/NodeReceipt" } }
+    PatchProposal:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Command" }
+              - type: object
+                required: [nodeId, runId, purposeDigest, baseSnapshotId, baseManifestDigest, fileChanges, patchDigest, securityLabelId]
+                properties:
+                  nodeId: { type: string, format: uuid }
+                  runId: { type: string, format: uuid }
+                  purposeDigest: { $ref: "#/components/schemas/Digest" }
+                  baseSnapshotId: { type: string, format: uuid }
+                  baseManifestDigest: { $ref: "#/components/schemas/Digest" }
+                  fileChanges: { type: array, items: { type: object, additionalProperties: true } }
+                  patchDigest: { $ref: "#/components/schemas/Digest" }
+                  securityLabelId: { type: string, format: uuid }
+    PatchApplication:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [independentGrantId, patchDigest, preconditionDigests, operationTicket, ownerSignature]
+            properties:
+              independentGrantId: { type: string, format: uuid }
+              patchDigest: { $ref: "#/components/schemas/Digest" }
+              preconditionDigests: { type: array, items: { $ref: "#/components/schemas/Digest" } }
+              operationTicket: { $ref: "#/components/schemas/OperationTicket" }
+              ownerSignature: { type: string }
+  responses:
+    Health:
+      description: Runner 版本、能力、schema、支持状态及 maxUploadBytes 等部署限制
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+    Object:
+      description: 合同定义的实体或投影
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+    Workspace:
+      description: 工作间
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Workspace" }
+    Run:
+      description: Run
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Run" }
+    RunAccepted:
+      description: 命令已接受且已持久化，不表示 Agent 或工具已完成
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Run" }
+    Accepted:
+      description: 已接受且已持久化
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Accepted" }
+    Approval:
+      description: 审批及完整 ActionProposal
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Approval" }
+    ApprovalList:
+      description: 当前主体有权查看的强类型审批列表
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApprovalList" }
+    Conclusion:
+      description: 关键结论
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Conclusion" }
+    Grant:
+      description: Grant；其生效仍需节点本地验证
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Grant" }
+    Problem:
+      description: 脱敏的标准错误
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    ArtifactMetadata:
+      type: object
+      required: [name, mediaType, size, sha256, kind, sourceSummary]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        mediaType: { type: string }
+        size: { type: integer, format: int64, minimum: 0 }
+        sha256: { $ref: "#/components/schemas/Digest" }
+        kind: { type: string, enum: [reference] }
+        sourceSummary: { type: string }
+        runId: { type: string, format: uuid }
+      additionalProperties: false
+    Digest:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    Command:
+      type: object
+      required: [commandId, payloadDigest]
+      properties:
+        commandId: { type: string, format: uuid }
+        payloadDigest: { $ref: "#/components/schemas/Digest" }
+        schemaVersion: { type: integer, default: 1 }
+    Accepted:
+      type: object
+      required: [commandId, state, revision]
+      properties:
+        commandId: { type: string, format: uuid }
+        state: { type: string, enum: [accepted, outcome_unknown] }
+        revision: { type: integer, format: int64 }
+        operationRef: { type: string }
+    Problem:
+      type: object
+      required: [type, title, status, code, detail, retryable]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        instance: { type: string }
+        retryable: { type: boolean }
+        revision: { type: integer, format: int64 }
+    MemberRole:
+      type: object
+      required: [userId, role]
+      properties:
+        userId: { type: string, format: uuid }
+        role: { type: string, enum: [owner, operator, contributor, observer] }
+        canApprove: { type: boolean, default: false }
+        canReview: { type: boolean, default: false }
+        expiresAt: { type: string, format: date-time }
+    ContextKind:
+      type: string
+      enum: [goal, fact, decision, constraint, todo, blocker, reference]
+    Workspace:
+      type: object
+      required: [id, kind, ownerId, runnerId, name, status, revision, currentOperator]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [personal, shared] }
+        teamId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        runnerId: { type: string, format: uuid }
+        name: { type: string }
+        goal: { type: string }
+        completionCriteria: { type: string }
+        status: { type: string, enum: [draft, active, archived] }
+        federationMode: { type: string, enum: [disabled, snapshot, snapshot_tools, snapshot_tools_patch] }
+        revision: { type: integer, format: int64 }
+        currentOperator:
+          type: object
+          required: [operatorId, operatorEpoch]
+          properties:
+            operatorId: { type: string, format: uuid }
+            operatorEpoch: { type: integer, format: int64 }
+    Run:
+      type: object
+      required: [id, workspaceId, state, operatorEpoch, contextSnapshotId]
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        state: { type: string, enum: [created, running, waiting_approval, stopping, technical_complete, failed, cancelled, needs_confirmation] }
+        operatorEpoch: { type: integer, format: int64 }
+        contextSnapshotId: { type: string, format: uuid }
+        result: { type: string, enum: [complete, partial, incomplete, failed, cancelled] }
+        unknownReason: { type: string }
+    Approval:
+      type: object
+      required: [id, actionProposal, requesterId, requiredApproverPolicy, policyRevision, state, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        requesterId: { type: string, format: uuid }
+        requiredApproverPolicy:
+          type: object
+          description: 独立审批、自我审批例外和额外审批要求，不包含秘密
+          additionalProperties: true
+        policyRevision: { type: integer, format: int64 }
+        actionProposal:
+          type: object
+          required: [toolName, displayArgs, secretRefs, actionDigest, purpose, impact, risk]
+          properties:
+            toolName: { type: string }
+            displayArgs:
+              type: object
+              description: 完整语义参数及明确脱敏占位，不含秘密值
+              additionalProperties: true
+            secretRefs:
+              type: array
+              description: 受控执行边界中的秘密引用，不包含秘密本身
+              items: { type: string }
+            actionDigest: { $ref: "#/components/schemas/Digest" }
+            purpose: { type: string }
+            impact: { type: string }
+            risk: { type: string }
+        state: { type: string, enum: [pending, approved, rejected, expired, invalidated] }
+        expiresAt: { type: string, format: date-time }
+        decidedBy: { type: string, format: uuid }
+        reason: { type: string }
+    ApprovalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Approval" }
+        nextCursor: { type: string }
+      additionalProperties: false
+    Conclusion:
+      type: object
+      required: [id, kind, body, state, scope, proposedBy]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [fact, assumption, decision] }
+        body: { type: string }
+        state: { type: string, enum: [unverified, confirmed, review_required, invalid] }
+        scope: { type: string }
+        proposedBy: { type: string, format: uuid }
+        confirmedBy: { type: string, format: uuid }
+        sourceVersionIds: { type: array, items: { type: string, format: uuid } }
+    DataRights:
+      type: object
+      description: 数据流权利与资源操作分离，全部默认 false，任一 true 均需对应 Grant 和出口检查
+      required: [modelDisclose, memberDisclose, publicTimeline, domainPropagate, centralCache, offlineRead]
+      properties:
+        modelDisclose: { type: boolean, default: false }
+        memberDisclose: { type: boolean, default: false }
+        publicTimeline: { type: boolean, default: false }
+        domainPropagate: { type: boolean, default: false }
+        centralCache: { type: boolean, default: false }
+        offlineRead: { type: boolean, default: false }
+      additionalProperties: false
+    ModelRecipient:
+      type: object
+      required: [providerId, modelId, region, retentionPolicy]
+      properties:
+        providerId: { type: string }
+        modelId: { type: string }
+        region: { type: string }
+        retentionPolicy: { type: string, enum: [zero_retention, provider_default, custom_reviewed] }
+      additionalProperties: false
+    PathVisibility:
+      type: string
+      description: |
+        独立于内容读取和数据流权利的元数据权限：opaque_only 仅向远程方提供 opaque entryId；
+        authorized_recipients 仅向具有相应成员/模型/目标域权利的接收方提供 logicalPath；
+        owner_only 仅所有者本地可见完整路径，所有远程视图均为 opaque。默认 opaque_only。
+      enum: [opaque_only, authorized_recipients, owner_only]
+      default: opaque_only
+    CachePolicy:
+      type: object
+      required: [centralCache, offlineRead, retentionSeconds]
+      properties:
+        centralCache: { type: boolean, default: false }
+        offlineRead: { type: boolean, default: false }
+        retentionSeconds: { type: integer, minimum: 0 }
+        maxBytes: { type: integer, format: int64, minimum: 0 }
+      additionalProperties: false
+    ResourceBudget:
+      type: object
+      properties:
+        maxFiles: { type: integer, minimum: 1 }
+        maxBytes: { type: integer, format: int64, minimum: 1 }
+        maxReadBytes: { type: integer, format: int64, minimum: 1 }
+        maxOutputBytes: { type: integer, format: int64, minimum: 1 }
+        maxDurationSeconds: { type: integer, minimum: 1 }
+        maxConcurrent: { type: integer, minimum: 1 }
+        cpuMillicpu: { type: integer, minimum: 1 }
+        memoryMb: { type: integer, minimum: 1 }
+        processes: { type: integer, minimum: 1 }
+      additionalProperties: false
+    RecipientRules:
+      type: object
+      description: 成员、模型、目标域、公共可见和缓存等独立维度，禁止仅给敏感等级
+      required: [members, models, targetDomains, publicTimeline, cache]
+      properties:
+        members:
+          type: array
+          description: 预定义角色、all_workspace_members 或 member:<uuid>；具体值由 pattern 限定
+          items: { type: string, pattern: '^(owner|operator|contributor|observer|approver|reviewer|all_workspace_members|member:[0-9a-fA-F-]{36})$' }
+          uniqueItems: true
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelRecipient" }
+        targetDomains:
+          type: array
+          description: 取值为 node:<uuid>、runner:<uuid> 或 workspace:<uuid>
+          items: { type: string, pattern: '^(node|runner|workspace):[0-9a-fA-F-]{36}$' }
+          uniqueItems: true
+        publicTimeline: { type: boolean, default: false }
+        cache: { $ref: "#/components/schemas/CachePolicy" }
+      additionalProperties: false
+    Grant:
+      type: object
+      required: [id, nodeId, runId, purposeDigest, resourceId, resourceDigest, operations, recipientRules, rights, notBefore, expiresAt, state, ownerSignature]
+      properties:
+        id: { type: string, format: uuid }
+        nodeId: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        purposeDigest: { $ref: "#/components/schemas/Digest" }
+        resourceId: { type: string, format: uuid }
+        resourceDigest: { $ref: "#/components/schemas/Digest" }
+        operations: { type: array, items: { type: string } }
+        recipientRules: { $ref: "#/components/schemas/RecipientRules" }
+        rights: { $ref: "#/components/schemas/DataRights" }
+        notBefore: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        state: { type: string, enum: [requested, active, suspended, rejected, revoked, expired, exhausted] }
+        ownerSignature: { type: string }
+    OperationTicket:
+      type: object
+      required: [requestId, nonce, executionId, nodeId, runId, grantDigest, actionDigest, recipientDigest, bodyDigest, notBefore, expiresAt, signature]
+      properties:
+        requestId: { type: string, format: uuid }
+        nonce: { type: string, minLength: 16 }
+        executionId: { type: string, format: uuid }
+        nodeId: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        grantDigest: { $ref: "#/components/schemas/Digest" }
+        actionDigest: { $ref: "#/components/schemas/Digest" }
+        recipientDigest: { $ref: "#/components/schemas/Digest" }
+        bodyDigest: { $ref: "#/components/schemas/Digest" }
+        notBefore: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        signature: { type: string }
+    ActorRef:
+      type: object
+      required: [actorId]
+      properties:
+        actorId: { type: string, format: uuid }
+        displayNameAtTime: { type: string }
+        rolesAtTime: { type: array, items: { type: string } }
+      additionalProperties: false
+    NodeReceipt:
+      type: object
+      required: [eventId, nodeId, nodeSequence, previousDigest, runId, requestId, actor, resourceDigest, operation, grantDigest, decision, occurredAt, result, byteCount, destinations, labelDigest, nodeSignature]
+      properties:
+        eventId: { type: string, format: uuid }
+        nodeId: { type: string, format: uuid }
+        nodeSequence: { type: integer, format: int64, minimum: 1 }
+        previousDigest: { $ref: "#/components/schemas/Digest" }
+        runId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        executionId: { type: string, format: uuid }
+        actor: { $ref: "#/components/schemas/ActorRef" }
+        resourceDigest: { $ref: "#/components/schemas/Digest" }
+        operation: { type: string }
+        grantDigest: { $ref: "#/components/schemas/Digest" }
+        decision: { type: string, enum: [accepted, rejected, succeeded, failed, cancelled, outcome_unknown] }
+        reason: { type: string }
+        occurredAt: { type: string, format: date-time }
+        result: { type: object, additionalProperties: true }
+        byteCount: { type: integer, format: int64, minimum: 0 }
+        destinations: { type: array, items: { type: string } }
+        labelDigest: { $ref: "#/components/schemas/Digest" }
+        uploadState: { type: string, enum: [pending, accepted, duplicate, gap], readOnly: true }
+        nodeSignature: { type: string }

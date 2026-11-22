@@ -1,0 +1,10 @@
+[package]
+name = "unspool-security-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Unspool Rust security-core boundary for local authorization and cryptography"
+
+[dependencies]
+serde.workspace = true

@@ -1,0 +1,19 @@
+{
+  "name": "@unspool/runner-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unspool Runner API and coordination surface",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../../scripts/copy-runner-assets.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "dev": "npm run build && node --watch dist/apps/runner-api/src/index.js",
+    "start": "node dist/apps/runner-api/src/index.js"
+  },
+  "dependencies": {
+    "@fastify/type-provider-typebox": "6.3.0",
+    "@sinclair/typebox": "0.34.52",
+    "fastify": "5.12.8"
+  }
+}

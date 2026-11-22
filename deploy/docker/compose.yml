@@ -1,0 +1,179 @@
+name: unspool-validation
+
+x-health-stub: &health-stub
+  profiles: ["validation"]
+  image: unspool-validation-health-stub:local
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+    target: health-stub
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - >-
+        node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    interval: 5s
+    timeout: 3s
+    retries: 12
+    start_period: 5s
+
+services:
+  runner-api:
+    profiles: ["validation"]
+    image: unspool-runner-api:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: runner-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      HOST: 0.0.0.0
+      PORT: ${UNSPOOL_RUNNER_PORT:-8443}
+      UNSPOOL_DATA_DIR: /var/lib/unspool
+      UNSPOOL_OWNER_TOKEN: ${UNSPOOL_OWNER_TOKEN:?UNSPOOL_OWNER_TOKEN must be set explicitly for validation}
+      UNSPOOL_MODEL_PROVIDER: ${UNSPOOL_MODEL_PROVIDER:-faux}
+      UNSPOOL_BETA_ENABLED: ${UNSPOOL_BETA_ENABLED:-false}
+      UNSPOOL_MODEL_GATEWAY_URL: http://model-gateway:8080
+      UNSPOOL_FAUX_MODEL_URL: http://fake-model:8080
+      UNSPOOL_FAKE_EXTERNAL_URL: http://fake-external:8080
+      UNSPOOL_BOOTSTRAP_SECRET_REF: ${UNSPOOL_BOOTSTRAP_SECRET_REF:-file:/run/secrets/unspool_bootstrap_code}
+      UNSPOOL_SESSION_SECRET_REF: ${UNSPOOL_SESSION_SECRET_REF:-file:/run/secrets/unspool_session_key}
+    ports:
+      - "127.0.0.1:${UNSPOOL_RUNNER_PORT:-8443}:${UNSPOOL_RUNNER_PORT:-8443}"
+    volumes:
+      - unspool-data:/var/lib/unspool
+      - ./secrets:/run/secrets:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+    depends_on:
+      model-gateway:
+        condition: service_healthy
+      fake-model:
+        condition: service_healthy
+      fake-external:
+        condition: service_healthy
+    networks:
+      - control
+      - execution
+
+  execution-worker-1:
+    profiles: ["validation"]
+    image: unspool-execution-worker:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: execution-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      HOST: 0.0.0.0
+      PORT: 8080
+      UNSPOOL_WORKER_ID: worker-1
+    depends_on:
+      runner-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - execution
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  execution-worker-2:
+    profiles: ["validation"]
+    image: unspool-execution-worker:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: execution-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      HOST: 0.0.0.0
+      PORT: 8080
+      UNSPOOL_WORKER_ID: worker-2
+    depends_on:
+      runner-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - execution
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  model-gateway:
+    <<: *health-stub
+    environment:
+      HEALTH_STUB_NAME: model-gateway
+      PORT: 8080
+      UNSPOOL_MODEL_PROVIDER: faux
+      UNSPOOL_FAUX_MODEL_URL: http://fake-model:8080
+    depends_on:
+      fake-model:
+        condition: service_healthy
+    networks:
+      - control
+
+  fake-model:
+    <<: *health-stub
+    environment:
+      HEALTH_STUB_NAME: fake-model
+      PORT: 8080
+    networks:
+      - control
+
+  fake-external:
+    <<: *health-stub
+    environment:
+      HEALTH_STUB_NAME: fake-external
+      PORT: 8080
+    networks:
+      - execution
+
+networks:
+  control:
+    driver: bridge
+  execution:
+    driver: bridge
+    internal: true
+
+volumes:
+  unspool-data:

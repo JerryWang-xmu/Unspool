@@ -1,0 +1,48 @@
+{
+  "name": "unspool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unspool general-purpose Agent and federated collaboration",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "apps/desktop",
+    "apps/runner-api",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @unspool/runner-api && npm run build --workspace @unspool/desktop",
+    "check": "npm run check:biome && npm run check:types && npm run check:rust",
+    "check:biome": "biome check .",
+    "check:types": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p apps/desktop/tsconfig.json",
+    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "format": "biome format --write . && cargo fmt --all",
+    "test": "npm run test:setup && npm run test:unit",
+    "test:setup": "node --test tests/setup/bootstrap.test.ts",
+    "test:unit": "vitest run --config vitest.config.ts --passWithNoTests tests/unit packages/test-support/test",
+    "test:contracts": "vitest run --config vitest.config.ts --passWithNoTests tests/contract",
+    "test:integration": "vitest run --config vitest.config.ts --passWithNoTests tests/integration",
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "test:security": "node scripts/check-secrets.mjs",
+    "check:release": "npm run check && npm run test && npm run test:security && npm run validate:compose",
+    "validate:compose": "docker compose -f deploy/docker/compose.yml --profile validation config --quiet",
+    "dev:desktop": "npm run tauri:dev --workspace @unspool/desktop"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.6.0",
+    "@node-rs/argon2": "2.2.2",
+    "argon2": "0.45.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@playwright/test": "1.65.1",
+    "@types/node": "24.19.2",
+    "fast-check": "4.10.3",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
+  }
+}
