@@ -6,5 +6,9 @@
     "outDir": "dist",
     "declaration": false
   },
-  "include": ["src/**/*.ts", "../execution-worker/src/server.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../execution-worker/src/server.ts",
+    "../execution-worker/src/agent-process.ts"
+  ]
 }

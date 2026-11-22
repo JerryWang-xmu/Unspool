@@ -6,6 +6,7 @@
  * part of the injected SDK port.
  */
 
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { PiAgentSessionPort, PiSessionManagerPort } from "./session-adapter.js";
 
 export interface PiExtensionLoadErrorDetail {
@@ -29,6 +30,11 @@ export interface PiWorkspaceSdkPort {
   createAgentSession(options: {
     cwd: string;
     sessionManager: PiSessionManagerPort;
+    agentDir?: string;
+    modelRuntime?: ModelRuntime;
+    model?: NonNullable<ReturnType<ModelRuntime["getModel"]>>;
+    noTools?: "all" | "builtin";
+    tools?: string[];
   }): Promise<PiCreateAgentSessionResult>;
 }
 
@@ -39,6 +45,11 @@ export interface OpenWorkspaceSessionInput {
   sessionDir: string;
   approvalExtensionPath: string;
   sdk: PiWorkspaceSdkPort;
+  agentDir?: string;
+  modelRuntime?: ModelRuntime;
+  model?: NonNullable<ReturnType<ModelRuntime["getModel"]>>;
+  noTools?: "all" | "builtin";
+  tools?: string[];
 }
 
 export interface OpenedWorkspaceSession {
@@ -82,7 +93,15 @@ export async function openWorkspaceSession(
   }
 
   const sessionManager = sdk.SessionManager.open(sessionPath, sessionDir, cwd);
-  const created = await sdk.createAgentSession({ cwd, sessionManager });
+  const created = await sdk.createAgentSession({
+    cwd,
+    sessionManager,
+    ...(input.agentDir === undefined ? {} : { agentDir: input.agentDir }),
+    ...(input.modelRuntime === undefined ? {} : { modelRuntime: input.modelRuntime }),
+    ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.noTools === undefined ? {} : { noTools: input.noTools }),
+    ...(input.tools === undefined ? {} : { tools: input.tools }),
+  });
 
   const extensionsResult = created.extensionsResult;
   if (extensionsResult === undefined || !Array.isArray(extensionsResult.errors)) {

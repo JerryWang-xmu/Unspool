@@ -3,10 +3,16 @@ import { pathToFileURL } from "node:url";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 import { CURRENT_SCHEMA_VERSION } from "../../../packages/persistence/src/migrations.js";
+import {
+  type AgentModelConfig,
+  resolveAgentModelConfig,
+} from "../../../packages/pi-adapter/src/openai-runtime.js";
 import type {
   B0Grant,
   B0OperationTicket,
 } from "../../../packages/test-support/src/federation/fixtures.js";
+import type { AgentExecutor } from "./agent/executor.js";
+import { createIpcAgentExecutor } from "./agent/ipc-executor.js";
 import { createSqliteApprovalStore } from "./approvals/store.js";
 import { ArchiveService } from "./archive/service.js";
 import { registerArtifactRoutes } from "./artifacts/routes.js";
@@ -69,6 +75,9 @@ export interface BuildServerOptions {
   readonly federationValidation?: boolean;
   readonly federationResourceRoots?: Readonly<Record<string, string>>;
   readonly host?: string;
+  readonly modelConfig?: AgentModelConfig;
+  readonly agentExecutor?: AgentExecutor;
+  readonly agentWorkerEntry?: string;
 }
 
 export async function buildServer(options: BuildServerOptions = {}) {
@@ -99,15 +108,35 @@ export async function buildServer(options: BuildServerOptions = {}) {
     dataDir,
     runnerId,
     agentProfileId,
+    ...(options.modelConfig === undefined
+      ? {}
+      : {
+          modelProvider: options.modelConfig.provider,
+          modelId: options.modelConfig.modelId,
+          modelSecretRef: options.modelConfig.apiKeyRef ?? "faux://not-applicable",
+        }),
   });
   const workspacesService = new WorkspacesService({ database });
   const contextService = new ContextService({ database });
   const inputService = new InputService({ database });
   const sharingService = createSharingService({ database });
-  const runsService = new RunsService({
+  let runsService: RunsService;
+  const agentExecutor =
+    options.agentExecutor ??
+    (options.modelConfig !== undefined && options.modelConfig.provider !== "faux"
+      ? createIpcAgentExecutor({
+          config: options.modelConfig,
+          agentDir: join(dataDir, "agent"),
+          onEvent: (event) => runsService.handleAgentEvent(event),
+          workerEntry: options.agentWorkerEntry,
+        })
+      : undefined);
+  runsService = new RunsService({
     database,
     workspaces: workspacesService,
     context: contextService,
+    executor: agentExecutor,
+    workspaceRoot: join(dataDir, "workspaces"),
   });
   const artifactService = createArtifactService({ database, dataDir });
   const teamService = new TeamService({ database });
@@ -212,7 +241,12 @@ export async function buildServer(options: BuildServerOptions = {}) {
     );
   });
   registerHealthRoutes(server, { capabilities: { schemaVersion: CURRENT_SCHEMA_VERSION } });
-  registerDiscoveryRoutes(server, { authenticator, ownerToken: effectiveToken, runnerService });
+  registerDiscoveryRoutes(server, {
+    authenticator,
+    ownerToken: effectiveToken,
+    runnerService,
+    modelConfig: options.modelConfig,
+  });
   registerPersonalRoutes(server, {
     service: personalService,
     resolveActorId: (request) => authenticator.actorId(request),
@@ -297,6 +331,8 @@ export async function buildServer(options: BuildServerOptions = {}) {
     return sendProblem(reply, "internal_error");
   });
   server.addHook("onClose", async () => {
+    await agentExecutor?.close();
+    await runsService.markActiveRunsUnknown("Runner stopped while Agent execution was active");
     federationRuntime.close();
     await close();
   });
@@ -305,8 +341,10 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
 async function main(): Promise<void> {
   const environment = loadEnvironment();
+  const modelConfig = resolveAgentModelConfig(process.env);
   const server = await buildServer({
     dataDir: environment.UNSPOOL_DATA_DIR,
+    modelConfig,
     logger: true,
     host: environment.HOST,
     federationValidation: process.env.UNSPOOL_FEDERATION_VALIDATION === "1",

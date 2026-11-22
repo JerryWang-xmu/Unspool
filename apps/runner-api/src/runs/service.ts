@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import type {
   SqliteDatabase,
   SqliteTransaction,
@@ -8,6 +9,7 @@ import {
   commitCommandUnitOfWork,
 } from "../../../../packages/persistence/src/unit-of-work.js";
 import { uuidv7 } from "../../../../packages/security/src/uuid.js";
+import type { AgentExecutor, AgentWorkerEvent } from "../agent/executor.js";
 import {
   type CommandIdempotencyService,
   createCommandIdempotencyService,
@@ -22,6 +24,8 @@ export interface RunsServiceOptions {
   readonly newId?: () => string;
   readonly workspaces?: WorkspacesService | undefined;
   readonly context?: ContextService | undefined;
+  readonly executor?: AgentExecutor | undefined;
+  readonly workspaceRoot?: string | undefined;
 }
 
 export interface RunCommandInput {
@@ -129,12 +133,50 @@ function mapCommandError(error: unknown): never {
   throw error;
 }
 
+async function appendDomainEvent(
+  transaction: SqliteTransaction,
+  input: {
+    readonly id: string;
+    readonly workspaceId: string;
+    readonly runId: string;
+    readonly actorId: string;
+    readonly type: string;
+    readonly payload: unknown;
+    readonly occurredAt: string;
+  },
+): Promise<void> {
+  const payloadDigest = `sha256:${createHash("sha256").update(JSON.stringify(input.payload)).digest("hex")}`;
+  await transaction.execute(
+    `INSERT INTO domain_event (id, workspace_id, sequence, schema_version, type, actor_id, run_id, occurred_at, visibility, payload_ref, payload_digest, payload)
+     VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM domain_event WHERE workspace_id = ?), 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.id,
+      input.workspaceId,
+      input.workspaceId,
+      input.type,
+      input.actorId,
+      input.runId,
+      input.occurredAt,
+      JSON.stringify({ kind: "workspace_members" }),
+      `event:${input.id}`,
+      payloadDigest,
+      JSON.stringify(input.payload),
+    ],
+  );
+  await transaction.execute(
+    "INSERT INTO outbox_message (id, domain_event_id, destination, state, attempt_count, available_at, created_at) VALUES (?, ?, 'domain-events', 'pending', 0, ?, ?)",
+    [input.id, input.id, input.occurredAt, input.occurredAt],
+  );
+}
+
 export class RunsService {
   readonly #database: SqliteDatabase;
   readonly #now: () => Date;
   readonly #newId: () => string;
   readonly #workspaces: WorkspacesService | undefined;
   readonly #context: ContextService | undefined;
+  readonly #executor: AgentExecutor | undefined;
+  readonly #workspaceRoot: string | undefined;
 
   constructor(options: RunsServiceOptions) {
     this.#database = options.database;
@@ -142,6 +184,8 @@ export class RunsService {
     this.#newId = options.newId ?? (() => uuidv7());
     this.#workspaces = options.workspaces;
     this.#context = options.context;
+    this.#executor = options.executor;
+    this.#workspaceRoot = options.workspaceRoot;
   }
 
   async startRun(
@@ -153,6 +197,7 @@ export class RunsService {
     const operatorEpoch = epoch(input.operatorEpoch);
     const payloadDigest = digest(input.payloadDigest);
     const runId = this.#newId();
+    const attemptId = this.#newId();
     const contextSnapshotId =
       input.contextSnapshotId === undefined
         ? this.#newId()
@@ -172,6 +217,8 @@ export class RunsService {
       endedAt: null,
       lastKnownCheckpoint: null,
     };
+    let goal = "";
+    let completionCriteria: string | undefined;
     try {
       const result = await commitCommandUnitOfWork(this.#database, {
         actorId,
@@ -185,9 +232,16 @@ export class RunsService {
             status: string;
             kind: string;
             owner_id: string;
-          }>("SELECT runner_id, status, kind, owner_id FROM workspace WHERE id = ?", [workspaceId]);
+            goal: string;
+            completion_criteria: string | null;
+          }>(
+            "SELECT runner_id, status, kind, owner_id, goal, completion_criteria FROM workspace WHERE id = ?",
+            [workspaceId],
+          );
           const workspace = workspaces[0];
           if (workspace === undefined) throw new ProblemError("not_found");
+          goal = workspace.goal;
+          completionCriteria = workspace.completion_criteria ?? undefined;
           if (workspace.kind === "personal" && workspace.owner_id !== actorId)
             throw new ProblemError("not_found");
           if (workspace.status === "archived") throw new ProblemError("workspace_archived");
@@ -254,6 +308,12 @@ export class RunsService {
               now,
             ],
           );
+          if (this.#executor !== undefined) {
+            await transaction.execute(
+              "INSERT INTO run_attempt (id, run_id, worker_id, attempt_epoch, state, lease_expires_at, started_at) VALUES (?, ?, 'pi-agent-worker', 1, 'assigned', ?, ?)",
+              [attemptId, runId, new Date(this.#now().getTime() + 3_600_000).toISOString(), now],
+            );
+          }
           await transaction.execute(
             "UPDATE workspace_control SET active_run_id = ?, active_run_epoch = ?, revision = revision + 1, updated_at = ? WHERE workspace_id = ?",
             [runId, operatorEpoch, now, workspaceId],
@@ -292,6 +352,36 @@ export class RunsService {
           },
         ],
       });
+      if (!result.replayed && this.#executor !== undefined) {
+        try {
+          await this.#executor.start({
+            runId,
+            attemptId,
+            attemptEpoch: 1,
+            workspaceId,
+            conversationId: String(run.conversationId),
+            cwd:
+              this.#workspaceRoot === undefined
+                ? process.cwd()
+                : join(this.#workspaceRoot, workspaceId),
+            goal,
+            completionCriteria,
+            instruction: input.body,
+            actorId,
+            operatorEpoch,
+          });
+        } catch (cause) {
+          await this.handleAgentEvent({
+            kind: "run.failed",
+            runId,
+            attemptId,
+            attemptEpoch: 1,
+            workspaceId,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+          run.state = "failed";
+        }
+      }
       return { response: result.response, replayed: result.replayed };
     } catch (error) {
       mapCommandError(error);
@@ -435,6 +525,20 @@ export class RunsService {
           },
         ],
       });
+      if (!result.replayed && this.#executor !== undefined) {
+        const command = { actorId, operatorEpoch, runId, body };
+        try {
+          if (kind === "steer") await this.#executor.steer(command);
+          else await this.#executor.followUp(command);
+        } catch (cause) {
+          await this.handleAgentEvent({
+            kind: "run.failed",
+            runId,
+            workspaceId,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      }
       return { response: result.response, replayed: result.replayed };
     } catch (error) {
       mapCommandError(error);
@@ -558,9 +662,206 @@ export class RunsService {
           },
         ],
       });
+      if (!result.replayed && this.#executor !== undefined) {
+        try {
+          await this.#executor.stop({ actorId, operatorEpoch, runId, body: "" });
+        } catch (cause) {
+          await this.handleAgentEvent({
+            kind: "run.needs_confirmation",
+            runId,
+            workspaceId,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      }
       return { response: result.response, replayed: result.replayed };
     } catch (error) {
       mapCommandError(error);
+    }
+  }
+
+  async handleAgentEvent(event: AgentWorkerEvent): Promise<void> {
+    if (event.kind === "worker.exited") {
+      await this.markActiveRunsUnknown(
+        typeof event.reason === "string" ? event.reason : "Agent worker exited",
+      );
+      return;
+    }
+    const runs = await this.#database.query<Record<string, unknown>>(
+      `${RUN_SELECT} WHERE r.id = ?`,
+      [event.runId],
+    );
+    const current = runs[0];
+    if (current === undefined) return;
+    const workspaceId = String(current.workspaceId);
+    if (event.attemptId !== undefined) {
+      const attempts = await this.#database.query<{ id: string; state: string }>(
+        "SELECT id, state FROM run_attempt WHERE id = ? AND run_id = ?",
+        [event.attemptId, event.runId],
+      );
+      if (attempts[0] === undefined || ["settled", "outcome_unknown"].includes(attempts[0].state))
+        return;
+    }
+    if (event.kind === "run.stopped") {
+      if (current.state === "stopping") {
+        await this.settleStoppedRun(
+          String(current.startedBy),
+          workspaceId,
+          event.runId,
+          Number(current.operatorEpoch),
+        );
+      }
+      return;
+    }
+    if (event.kind === "command.disposition") {
+      if (event.disposition === "handled") {
+        await this.consumeNextInstruction(
+          String(current.startedBy),
+          workspaceId,
+          event.runId,
+          Number(current.operatorEpoch),
+        );
+      }
+      return;
+    }
+    if (
+      current.state === "stopping" ||
+      ((current.state === "technical_complete" || current.state === "cancelled") &&
+        event.kind !== "checkpoint") ||
+      (current.state === "failed" && event.kind === "run.failed")
+    ) {
+      return;
+    }
+    const now = this.#now().toISOString();
+    const domainEventId = this.#newId();
+    await this.#database.write(async (transaction) => {
+      let type = event.kind;
+      let payload: unknown = { ...event };
+      switch (event.kind) {
+        case "message.completed":
+          type = "assistant.message_completed";
+          payload = { output: event.text };
+          break;
+        case "checkpoint": {
+          type = "session.checkpoint";
+          payload = { checkpoint: event.checkpoint };
+          if (typeof event.checkpoint !== "object" || event.checkpoint === null) {
+            throw new Error("Worker checkpoint is missing");
+          }
+          const checkpoint = event.checkpoint as Record<string, unknown>;
+          const checkpointId = this.#newId();
+          const piLeafId = String(checkpoint.piLeafId ?? "");
+          const lastPersistedEntryId = String(checkpoint.lastPersistedEntryId ?? "");
+          if (piLeafId.length === 0 || lastPersistedEntryId.length === 0) {
+            throw new Error("Worker checkpoint is missing Pi persistence identifiers");
+          }
+          await transaction.execute(
+            "INSERT INTO session_checkpoint (id, conversation_id, run_id, pi_leaf_id, last_persisted_entry_id, last_projected_event_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+              checkpointId,
+              current.conversationId,
+              event.runId,
+              piLeafId,
+              lastPersistedEntryId,
+              domainEventId,
+              now,
+            ],
+          );
+          await transaction.execute("UPDATE run SET last_known_checkpoint = ? WHERE id = ?", [
+            checkpointId,
+            event.runId,
+          ]);
+          break;
+        }
+        case "run.completed":
+          if (["failed", "cancelled", "technical_complete"].includes(String(current.state))) return;
+          type = "run.technical_completed";
+          payload = { runId: event.runId, state: "technical_complete" };
+          await transaction.execute(
+            "UPDATE run SET state = 'technical_complete', ended_at = ? WHERE id = ?",
+            [now, event.runId],
+          );
+          await transaction.execute(
+            "UPDATE run_attempt SET state = 'settled', settled_at = ? WHERE id = ?",
+            [now, event.attemptId],
+          );
+          await transaction.execute(
+            "UPDATE workspace_control SET active_run_id = NULL, active_run_epoch = 0, revision = revision + 1, updated_at = ? WHERE workspace_id = ?",
+            [now, workspaceId],
+          );
+          break;
+        case "run.failed":
+          type = "run.failed";
+          payload = { runId: event.runId, state: "failed", error: event.error };
+          await transaction.execute("UPDATE run SET state = 'failed', ended_at = ? WHERE id = ?", [
+            now,
+            event.runId,
+          ]);
+          if (event.attemptId !== undefined) {
+            await transaction.execute(
+              "UPDATE run_attempt SET state = 'settled', settled_at = ? WHERE id = ?",
+              [now, event.attemptId],
+            );
+          }
+          await transaction.execute(
+            "UPDATE workspace_control SET active_run_id = NULL, active_run_epoch = 0, revision = revision + 1, updated_at = ? WHERE workspace_id = ?",
+            [now, workspaceId],
+          );
+          break;
+        case "run.needs_confirmation":
+          type = "run.needs_confirmation";
+          payload = { runId: event.runId, state: "needs_confirmation", error: event.error };
+          await transaction.execute("UPDATE run SET state = 'needs_confirmation' WHERE id = ?", [
+            event.runId,
+          ]);
+          if (event.attemptId !== undefined) {
+            await transaction.execute(
+              "UPDATE run_attempt SET state = 'outcome_unknown', unknown_reason = ? WHERE id = ?",
+              [String(event.error), event.attemptId],
+            );
+          }
+          await transaction.execute(
+            "UPDATE workspace_control SET active_run_id = NULL, active_run_epoch = 0, revision = revision + 1, updated_at = ? WHERE workspace_id = ?",
+            [now, workspaceId],
+          );
+          break;
+        default:
+          break;
+      }
+      await appendDomainEvent(transaction, {
+        id: domainEventId,
+        workspaceId,
+        runId: event.runId,
+        actorId: String(current.startedBy),
+        type,
+        payload,
+        occurredAt: now,
+      });
+    });
+    if (event.kind === "run.completed") {
+      for (let index = 0; index < 100; index += 1) {
+        const next = await this.consumeNextInstruction(
+          String(current.startedBy),
+          workspaceId,
+          event.runId,
+          Number(current.operatorEpoch),
+        );
+        if (next === null) break;
+      }
+    }
+  }
+
+  async markActiveRunsUnknown(reason: string): Promise<void> {
+    const active = await this.#database.query<{ id: string; workspaceId: string }>(
+      "SELECT id, workspace_id AS workspaceId FROM run WHERE state IN ('created', 'running', 'waiting_approval', 'stopping')",
+    );
+    for (const run of active) {
+      await this.handleAgentEvent({
+        kind: "run.needs_confirmation",
+        runId: run.id,
+        workspaceId: run.workspaceId,
+        error: reason,
+      });
     }
   }
 

@@ -21,6 +21,9 @@ export interface PersonalServiceOptions {
   readonly newId?: () => string;
   readonly runnerId?: string;
   readonly agentProfileId?: string;
+  readonly modelProvider?: "faux" | "openai-compatible" | "opencode-go";
+  readonly modelId?: string;
+  readonly modelSecretRef?: string;
 }
 
 export interface PersonalTaskInput {
@@ -111,6 +114,9 @@ export class PersonalService {
   readonly #newId: () => string;
   readonly #runnerId: string | undefined;
   readonly #agentProfileId: string | undefined;
+  readonly #modelProvider: "faux" | "openai-compatible" | "opencode-go";
+  readonly #modelId: string;
+  readonly #modelSecretRef: string;
 
   constructor(options: PersonalServiceOptions) {
     this.#database = options.database;
@@ -118,6 +124,9 @@ export class PersonalService {
     this.#newId = options.newId ?? (() => uuidv7());
     this.#runnerId = options.runnerId;
     this.#agentProfileId = options.agentProfileId;
+    this.#modelProvider = options.modelProvider ?? "faux";
+    this.#modelId = options.modelId ?? "faux-model";
+    this.#modelSecretRef = options.modelSecretRef ?? "faux://not-applicable";
   }
 
   async createTask(
@@ -156,7 +165,12 @@ export class PersonalService {
       completionCriteria,
       status: "active",
       visibility: "owner_private",
-      agentConfigSnapshot: { provider: "faux", model: "faux-model", agentProfileId, pinned: false },
+      agentConfigSnapshot: {
+        provider: this.#modelProvider,
+        model: this.#modelId,
+        agentProfileId,
+        pinned: false,
+      },
       federationMode: "disabled",
       revision: 1,
       createdAt: now,
@@ -181,8 +195,11 @@ export class PersonalService {
             [runnerId, now],
           );
           await transaction.execute(
-            "INSERT OR IGNORE INTO model_profile (id, runner_id, provider, model, reasoning_options, secret_ref, enabled) VALUES (?, ?, 'faux', 'faux-model', '{}', 'faux://not-applicable', 1)",
-            [agentProfileId, runnerId],
+            `INSERT INTO model_profile (id, runner_id, provider, model, reasoning_options, secret_ref, enabled)
+             VALUES (?, ?, ?, ?, '{}', ?, 1)
+             ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, model = excluded.model,
+               secret_ref = excluded.secret_ref, enabled = 1`,
+            [agentProfileId, runnerId, this.#modelProvider, this.#modelId, this.#modelSecretRef],
           );
           await transaction.execute(
             `INSERT INTO workspace (id, kind, team_id, owner_id, runner_id, name, goal, completion_criteria, status, visibility, agent_config_snapshot, federation_mode, revision, created_at, archived_at) VALUES (?, 'personal', NULL, ?, ?, ?, ?, ?, 'active', 'owner_private', ?, 'disabled', 1, ?, NULL)`,

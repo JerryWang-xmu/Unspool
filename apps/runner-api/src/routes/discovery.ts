@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { AgentModelConfig } from "../../../../packages/pi-adapter/src/openai-runtime.js";
 import type { BearerAuthenticator } from "../auth/bearer.js";
 import { derivedLocalId } from "../auth/bearer.js";
 import { sendProblem } from "../errors/problem.js";
@@ -8,6 +9,7 @@ export interface DiscoveryRouteOptions {
   readonly authenticator: BearerAuthenticator;
   readonly ownerToken: string;
   readonly runnerService?: RunnerService | undefined;
+  readonly modelConfig?: AgentModelConfig | undefined;
 }
 
 export function registerDiscoveryRoutes(
@@ -59,8 +61,8 @@ export function registerDiscoveryRoutes(
             id: localProfileId,
             profileId: localProfileId,
             runnerId: localRunnerId,
-            provider: "faux",
-            model: "faux-model",
+            provider: options.modelConfig?.provider ?? "faux",
+            model: options.modelConfig?.modelId ?? "faux-model",
             enabled: true,
             health: "available",
           },
